@@ -1,72 +1,73 @@
-pipeline {
-
+def COLOR_MAP = [
+    'SUCCESS': 'good',
+    'FAILURE': 'danger',
+]
+pipeline{
     agent any
-/*
-	tools {
-        maven "maven3"
+    tools{
+        maven "M3"
+        jdk "JDK11"
     }
-*/
+
     environment {
-        NEXUS_VERSION = "nexus3"
+        NEXUS_USER = "admin"
+        NEXUS_PASS = "admin"
+        NEXUS_VERSION = "admin"
         NEXUS_PROTOCOL = "http"
-        NEXUS_URL = "172.31.40.209:8081"
+        NEXUS_URL = "4.240.74.220:8081"
+        NEXUSIP = "4.240.74.220"
+        NEXUSPORT = "8081"
         NEXUS_REPOSITORY = "vprofile-release"
-        NEXUS_REPO_ID    = "vprofile-release"
+	    NEXUS_REPO_ID  = "vprofile-release"
+        CENTRAL_REPO = "vpro-maven-central"
+        NEXUS_GRP_REPO = "vpro-maven-group" 
         NEXUS_CREDENTIAL_ID = "nexuslogin"
+        SNAP_REPO = "vprofile-snapshot"
         ARTVERSION = "${env.BUILD_ID}"
+        SONARSCANNER = "sonarscanner"
+        SONARSERVER = "sonarserver"
+
+
     }
-
     stages{
-
-        stage('Fetch Code') {
-            steps {
-                git branch: 'paac', url: 'https://github.com/devopshydclub/vprofile-project.git'
-            }
-        }
         stage('BUILD'){
-            steps {
-                sh 'mvn clean install -DskipTests'
+            steps{
+                sh(script: 'mvn clean -s settings.xml -DskipTests install')
             }
-            post {
-                success {
-                    echo 'Now Archiving...'
-                    archiveArtifacts artifacts: '**/target/*.war'
+            post{
+                success{
+                    echo "now Archiving"
+                    archiveArtifacts(artifacts: '**/target/*.war')
                 }
             }
         }
-
         stage('UNIT TEST'){
-            steps {
-                sh 'mvn test'
+            steps{
+                sh(script: 'mvn test')
             }
         }
-
         stage('INTEGRATION TEST'){
-            steps {
-                sh 'mvn verify -DskipUnitTests'
+            steps{
+                sh(script: 'mvn verify -DskipUnitTests')
             }
         }
-
-        stage ('CODE ANALYSIS WITH CHECKSTYLE'){
-            steps {
-                sh 'mvn checkstyle:checkstyle'
+        stage('CODE ANALYSIS WITH CHECKSYTLE'){
+            steps{
+                sh(script: 'mvn checkstyle:checkstyle')
             }
-            post {
-                success {
-                    echo 'Generated Analysis Result'
+            post{
+                success{
+                    echo "Generated Analysis Result"
                 }
             }
         }
-
-        stage('CODE ANALYSIS with SONARQUBE') {
-
-            environment {
-                scannerHome = tool 'mysonarscanner4'
+        stage('CODE ANALYSIS WITH SONARQUBE'){
+            environment{
+                scannerHome = tool "sonarscanner"
             }
-
-            steps {
-                withSonarQubeEnv('sonar-pro') {
-                    sh '''${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=vprofile \
+            steps{
+                withSonarQubeEnv("${SONARSERVER}"){
+                sh '''${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=vprofile \
                    -Dsonar.projectName=vprofile-repo \
                    -Dsonar.projectVersion=1.0 \
                    -Dsonar.sources=src/ \
@@ -75,53 +76,39 @@ pipeline {
                    -Dsonar.jacoco.reportsPath=target/jacoco.exec \
                    -Dsonar.java.checkstyle.reportPaths=target/checkstyle-result.xml'''
                 }
-
                 timeout(time: 10, unit: 'MINUTES') {
                     waitForQualityGate abortPipeline: true
                 }
+            } 
+        }
+        stage("PUBLISH ARTIFACTS"){
+            steps{
+                nexusArtifactUploader(
+                            nexusVersion: 'nexus3',
+                            protocol: 'http',
+                            nexusUrl: "${NEXUSIP}:${NEXUSPORT}",
+                            groupId: "QA",
+                            version: "${env.BUILD_ID}-${env.BUILD_TIMESTAMP}",
+                            repository: "${NEXUS_REPOSITORY}",
+                            credentialsId: "${NEXUS_CREDENTIAL_ID}",
+                            artifacts: [
+                                [artifactId: 'vproapp',
+                                classifier: '',
+                                file: 'target/vprofile-v2.war',
+                                type: "war"]
+                            ]
+                )
             }
         }
-
-        stage("Publish to Nexus Repository Manager") {
-            steps {
-                script {
-                    pom = readMavenPom file: "pom.xml";
-                    filesByGlob = findFiles(glob: "target/*.${pom.packaging}");
-                    echo "${filesByGlob[0].name} ${filesByGlob[0].path} ${filesByGlob[0].directory} ${filesByGlob[0].length} ${filesByGlob[0].lastModified}"
-                    artifactPath = filesByGlob[0].path;
-                    artifactExists = fileExists artifactPath;
-                    if(artifactExists) {
-                        echo "*** File: ${artifactPath}, group: ${pom.groupId}, packaging: ${pom.packaging}, version ${pom.version} ARTVERSION";
-                        nexusArtifactUploader(
-                                nexusVersion: NEXUS_VERSION,
-                                protocol: NEXUS_PROTOCOL,
-                                nexusUrl: NEXUS_URL,
-                                groupId: pom.groupId,
-                                version: ARTVERSION,
-                                repository: NEXUS_REPOSITORY,
-                                credentialsId: NEXUS_CREDENTIAL_ID,
-                                artifacts: [
-                                        [artifactId: pom.artifactId,
-                                         classifier: '',
-                                         file: artifactPath,
-                                         type: pom.packaging],
-                                        [artifactId: pom.artifactId,
-                                         classifier: '',
-                                         file: "pom.xml",
-                                         type: "pom"]
-                                ]
-                        );
-                    }
-                    else {
-                        error "*** File: ${artifactPath}, could not be found";
-                    }
-                }
-            }
-        }
-
-
+       
     }
-
-
+    post{
+        always{
+            echo "Slack Notification"
+            slackSend channel: '#dev-ops',
+                color: COLOR_MAP[currentBuild.currentResult],
+                message: "*${currentBuild.currentResult}:* Job ${env.JOB_NAME} Build ${env.BUILD_NUMBER} \n More info at: ${env.BUILD_URL}"
+        }
+    }
+    
 }
-
