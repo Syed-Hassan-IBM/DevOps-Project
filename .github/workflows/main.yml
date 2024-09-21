@@ -1,4 +1,4 @@
-name: Test Workflow
+name: Code Test Workflow
 on: workflow_dispatch
 jobs:
   Testing:
