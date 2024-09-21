@@ -28,9 +28,9 @@ jobs:
       - name: SonarQube Scan
         run: sonar-scanner
             -Dsonar.host.url=https://sonarcloud.io/
-            -Dsonar.login=2b92979bc08388966fa6529749d0bd1c7f758331
-            -Dsonar.organization=silver-action
-            -Dsonar.projectKey=silver-action
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+            -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
             -Dsonar.sources=$GITHUB_WORKSPACE
             -Dsonar.sources=src/ 
             -Dsonar.junit.reportsPath-target/surefire-reports/ 
