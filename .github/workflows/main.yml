@@ -1,0 +1,9 @@
+name: Silver_profile
+on: workflow_dispatch
+jobs: 
+  Testing:
+    runs-on: ubuntu_latest
+    steps: 
+      - name: Testing the Workflow
+        run: echo "workflow Test"
+  
